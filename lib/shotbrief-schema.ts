@@ -4,8 +4,8 @@ export const platformSchema = z.enum(["ios", "android"]);
 
 export const slideSchema = z.object({
   id: z.string().min(1),
-  headline: z.string().min(1).max(72),
-  subheadline: z.string().max(140).optional(),
+  headline: z.string().min(1).max(96),
+  subheadline: z.string().max(280).optional(),
   device: platformSchema,
   mockup: z.string().min(1),
   layout: z.enum(["device_center", "device_left", "device_right", "device_stack"]),
@@ -25,14 +25,16 @@ export const slideSchema = z.object({
       })
     )
     .default([]),
-  text: z.object({
-    align: z.enum(["left", "center", "right"]),
-    position: z.enum(["top", "middle", "bottom"])
-  })
+  text: z
+    .object({
+      align: z.enum(["left", "center", "right"]),
+      position: z.enum(["top", "middle", "bottom"])
+    })
+    .default({ align: "center", position: "top" })
 });
 
 export const layoutSchema = z.object({
-  slides: z.array(slideSchema).min(1).max(10)
+  slides: z.array(slideSchema).min(1).max(20)
 });
 
 export type LayoutPlan = z.infer<typeof layoutSchema>;
