@@ -2,9 +2,11 @@
 
 Local-first brief builder for App Store and Google Play screenshot production.
 
-ShotBrief helps you turn raw app screenshots into an AI-ready production package. It frames your screens inside iOS and Android mockups, captures the app context, locks the slide plan, and hands everything to an IDE agent such as Codex, Cursor, Claude Code, or Antigravity.
+ShotBrief helps you turn raw app screenshots into an AI-ready production package. It keeps your original screenshots intact, captures the app context, locks the slide plan, and hands everything to an IDE agent such as Codex, Cursor, Claude Code, or Antigravity.
 
 The agent does the creative screenshot design in code. ShotBrief then reloads the generated PNGs, lets you review them, and exports the final package.
+
+ShotBrief expects the IDE agent to have access to a local browser or Codex in-app browser DOM surface for rendering, export status checks, and visual QA. If the browser/DOM surface is closed or disabled, reopen or enable it before asking the agent to produce final screenshots.
 
 ## Why ShotBrief Exists
 
@@ -21,16 +23,19 @@ ShotBrief fixes that by producing a structured package with strict production ru
 
 ## Core Workflow
 
-1. Enter app basics, description, platform, mood, colors, and selling points.
+1. Enter app basics, description, platform, colors, and selling points.
 2. Upload app screenshots.
-3. ShotBrief places each screenshot into iOS and/or Android device mockups.
-4. ShotBrief locks the slide plan from the generated mockups.
-5. Choose one handoff path:
+3. ShotBrief stores the raw screenshots as the app UI source of truth.
+4. ShotBrief locks the slide plan from the uploaded screenshots and target platforms.
+5. Choose one generation path:
+   - API workflow: generate a fresh temporary page from the current package.
    - IDE workflow: write files to `.shotbrief/working`.
    - ZIP workflow: download a portable AI package.
-6. Give the package to your IDE agent.
-7. The agent designs and exports PNG screenshots to `.shotbrief/working/final`.
+6. For IDE/ZIP, give the package to your coding agent.
+7. The API or agent opens the generated browser route through DOM/browser automation, designs, renders, and exports PNG screenshots to `.shotbrief/working/final`.
 8. Reload outputs in ShotBrief, review them, and export the final PNG ZIP.
+
+Generated agent source code belongs in `.shotbrief/generated`. If the Codex/IDE agent creates a temporary `app/shotbrief-generated/current/page.tsx` route, ShotBrief treats it as disposable output. Both generated locations are deleted before each fresh run. ShotBrief also removes `.shotbrief/working` when you start a fresh build, write a new package, or clean the workspace.
 
 ## Package Contents
 
@@ -41,9 +46,9 @@ ShotBrief produces:
 ├── project.md
 ├── brief.json
 ├── manifest.json
-├── mockups/
-│   ├── mock-ios-01.png
-│   └── mock-android-01.png
+├── screenshots/
+│   ├── screen-01.png
+│   └── screen-02.png
 └── final/
     ├── 01-ios-01-1320x2868.png
     └── 02-android-01-1080x1920.png
@@ -65,7 +70,7 @@ For local IDE workflow:
 SKILL.md
 .shotbrief/working/project.md
 .shotbrief/working/brief.json
-.shotbrief/working/mockups/*.png
+.shotbrief/working/screenshots/*
 ```
 
 For ZIP workflow:
@@ -74,17 +79,27 @@ For ZIP workflow:
 SKILL.md
 project.md
 brief.json
-mockups/*.png
+screenshots/*
 ```
 
-`SKILL.md` defines the fixed screenshot production rules. `project.md` and `brief.json` define the app-specific brief, slide count, brand colors, output sizes, and mockup assignments.
+`SKILL.md` defines the fixed screenshot production rules and creative quality gates. `project.md` explains the app-specific product story. `brief.json` stays intentionally lean: app facts, slide messages, brand colors, output sizes, raw screenshot assignments, and device-frame metrics.
+
+## Fresh Generation Task
+
+The in-app fresh generation action is local-only. It does not call an external model or require an API key. It clears previous `.shotbrief/generated`, temporary `app/shotbrief-generated`, and old final outputs, then writes `.shotbrief/generated/GENERATION_REQUEST.md` for the current Codex/IDE agent to handle.
+
+Generated browser routes should expose stable DOM targets such as `shotbrief-export-status`, `shotbrief-slide-node`, `shotbrief-output-file`, and `shotbrief-agent-output-gallery` so Codex/IDE agents can wait for true-size export completion and verify outputs without relying on fragile window screenshots.
 
 ## Screenshot Rules
 
 The generated package tells the agent to:
 
-- use the provided mockups as the only app visuals
-- produce exactly one designed slide per mockup
+- use the provided raw screenshots as the only app UI visuals
+- build high-quality device frames inside the coded generator
+- use a React/Next screenshot generator as the source of truth
+- export from browser-rendered true-size slide nodes, not scaled previews or JSON
+- inline screenshot assets before capture so exports do not lose images
+- produce exactly one designed slide per assigned screenshot/platform pair
 - keep every slide focused on one idea
 - keep copy short and readable at store thumbnail size
 - respect the selected brand colors
@@ -92,6 +107,7 @@ The generated package tells the agent to:
 - build screenshot designs in code
 - export final PNGs instead of returning layout JSON
 - visually inspect every PNG before finishing
+- avoid duplicate notch, status bar, or Dynamic Island overlays when raw screenshots already contain them
 
 ## Initial Store Sizes
 
@@ -153,7 +169,7 @@ ShotBrief writes temporary working files under:
 .shotbrief/
 ```
 
-This directory is ignored by git. Use the in-app clean action to remove the current working package and agent outputs.
+This directory is ignored by git. Use the in-app clean action to remove the current working package, final agent outputs, and generated scratch code.
 
 ## Repository Description
 

@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 
 const workingDir = path.join(process.cwd(), ".shotbrief", "working");
 const manifestPath = path.join(workingDir, "manifest.json");
+const generatedDir = path.join(process.cwd(), ".shotbrief", "generated");
+const legacyGeneratedDir = path.join(process.cwd(), "app", "shotbrief-generated");
 
 type Manifest = {
   generatedAt: string;
@@ -27,11 +29,19 @@ async function readManifest() {
   }
 }
 
+async function cleanGeneratedScratch() {
+  await Promise.all([
+    rm(generatedDir, { force: true, recursive: true }),
+    rm(legacyGeneratedDir, { force: true, recursive: true })
+  ]);
+}
+
 export async function POST() {
   try {
     const manifest = await readManifest();
     if (!manifest) {
       await rm(workingDir, { force: true, recursive: true });
+      await cleanGeneratedScratch();
       return NextResponse.json({ ok: true, removed: 0 });
     }
 
@@ -50,6 +60,7 @@ export async function POST() {
     await rm(path.join(workingDir, "final"), { force: true, recursive: true });
     await rm(path.join(workingDir, "outputs"), { force: true, recursive: true });
     await rm(path.join(workingDir, "exports"), { force: true, recursive: true });
+    await cleanGeneratedScratch();
 
     return NextResponse.json({ ok: true, removed });
   } catch (error) {

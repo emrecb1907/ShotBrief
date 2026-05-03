@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 
 const workingDir = path.join(process.cwd(), ".shotbrief", "working");
 const manifestPath = path.join(workingDir, "manifest.json");
+const generatedDir = path.join(process.cwd(), ".shotbrief", "generated");
+const legacyGeneratedDir = path.join(process.cwd(), "app", "shotbrief-generated");
 
 type PackageFile = {
   path: string;
@@ -33,10 +35,18 @@ async function readManifest() {
   }
 }
 
+async function cleanGeneratedScratch() {
+  await Promise.all([
+    rm(generatedDir, { force: true, recursive: true }),
+    rm(legacyGeneratedDir, { force: true, recursive: true })
+  ]);
+}
+
 async function cleanFromManifest() {
   const manifest = await readManifest();
   if (!manifest) {
     await rm(workingDir, { force: true, recursive: true });
+    await cleanGeneratedScratch();
     return 0;
   }
 
@@ -55,6 +65,7 @@ async function cleanFromManifest() {
   await rm(path.join(workingDir, "final"), { force: true, recursive: true });
   await rm(path.join(workingDir, "outputs"), { force: true, recursive: true });
   await rm(path.join(workingDir, "exports"), { force: true, recursive: true });
+  await cleanGeneratedScratch();
   return removed;
 }
 

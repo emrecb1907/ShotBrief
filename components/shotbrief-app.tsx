@@ -32,6 +32,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -50,9 +60,11 @@ import {
   createPackageHowToMarkdown,
   createPromptMarkdown,
   createSlideTargets,
+  deviceFrameAssets,
   getPlatforms,
   getRequiredSlideCount,
   initialBrief,
+  screenshotFileName,
   storeSizes
 } from "@/lib/shotbrief";
 import { type LayoutPlan, type SlidePlan, layoutSchema } from "@/lib/shotbrief-schema";
@@ -68,6 +80,21 @@ type AgentOutput = {
   name: string;
   path: string;
   dataUrl: string;
+};
+
+type EmbeddedExportStatus = "idle" | "waiting" | "running" | "done" | "error";
+type GenerationStatus = {
+  hasGenerationRequest: boolean;
+  hasGeneratedRoute: boolean;
+  finalPngCount: number;
+};
+type ConfirmationRequest = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
 };
 
 type PersistedShotBriefState = {
@@ -171,7 +198,7 @@ const copy = {
       badges: ["MVP blueprint ready", "No preset theme trap", "Agent-coded screenshots"],
       headline: "App store screenshots, briefed like a product launch.",
       subhead:
-        "ShotBrief packages raw screenshots, device mockups, brand context, sales angles, and project instructions into one local-first workflow. Your IDE agent designs freely in code. ShotBrief reviews the exported PNGs.",
+        "ShotBrief packages raw screenshots, brand context, sales angles, and project instructions into one local-first workflow. Your IDE agent builds premium device frames and designs freely in code. ShotBrief reviews the exported PNGs.",
       start: "Start building",
       openRenderer: "Open renderer",
       stats: ["required templates", "brief checks", "ready signals"],
@@ -184,17 +211,17 @@ const copy = {
       pipeline: [
         {
           title: "Collect context",
-          copy: "App metadata, screenshots, platform, colors, mood, and selling points land in one strict brief.",
+          copy: "App metadata, screenshots, platform, colors, and selling points land in one focused brief.",
           icon: Upload
         },
         {
-          title: "Compose mockups",
-          copy: "Raw screenshots are framed into iOS and Android device visuals the AI can reference without inventing screens.",
+          title: "Keep raw screens",
+          copy: "Original screenshots stay intact so the AI can place them inside higher-quality device frames during generation.",
           icon: Smartphone
         },
         {
           title: "Hand off to your agent",
-          copy: "The app writes project.md, brief.json, and mockups so Codex, Cursor, Claude Code, or Antigravity can design in code.",
+          copy: "The app writes project.md, brief.json, and raw screenshots so Codex, Cursor, Claude Code, or Antigravity can design in code.",
           icon: FileJson
         },
         {
@@ -206,17 +233,17 @@ const copy = {
       features: [
         {
           title: "Strict output contract",
-          copy: "The project brief locks the slide count, platform sizes, mockup usage, color system, and export expectations.",
+          copy: "The project brief locks the slide count, platform sizes, raw screenshot usage, color system, and export expectations.",
           icon: ShieldCheck
         },
         {
           title: "iOS and Android aware",
-          copy: "Mockup IDs, platform dimensions, App Store sizes, Google Play phone portrait, and feature graphic targets are explicit.",
+          copy: "Screenshot IDs, platform dimensions, App Store sizes, Google Play phone portrait, and feature graphic targets are explicit.",
           icon: MonitorSmartphone
         },
         {
           title: "Free mode stays useful",
-          copy: "No API key required. Export project.md, brief.json, and device mockups as a focused AI-ready package.",
+          copy: "No API key required. Export project.md, brief.json, and raw screenshots as a focused AI-ready package.",
           icon: KeyRound
         }
       ]
@@ -230,11 +257,11 @@ const copy = {
       descriptionPlaceholder: "One clear sentence about what your app helps people do.",
       targetPlatform: "Target platform",
       fillExample: "Fill example copy",
-      brandDirection: "Brand direction",
-      brandHelp: "Used in brief.json and the agent handoff prompt.",
-      dominantColors: "Dominant colors",
-      mood: "Mood / style direction",
-      moodPlaceholder: "Premium, calm, fast, playful, developer-focused...",
+      brandDirection: "Brand and messages",
+      brandHelp: "Choose the exact background, text, and accent colors used in brief.json and the agent handoff prompt.",
+      dominantColors: "Theme colors",
+      colorRoles: ["Background", "Text", "Accent"],
+      colorHelp: "Color 1 becomes the dominant slide background, color 2 is text color only, and color 3 becomes the accent. Muted tones are derived automatically.",
       features: "Key selling features",
       featurePlaceholders: [
         "The strongest benefit users should notice first",
@@ -244,7 +271,7 @@ const copy = {
         "An optional final differentiator"
       ],
       slideCount: "Locked slide plan",
-      slidePlanHelp: "Slide count is locked to the generated mockups so every supplied screen is used.",
+      slidePlanHelp: "Slide count is locked to the uploaded screenshots so every supplied screen is used.",
       slidePlanEmpty: "Add screenshots to create the locked slide plan.",
       agentMode: "How do you want to continue?",
       agentHelp: "Choose the path for the next step. IDE mode writes files into this repo; ZIP mode gives you a portable package for another agent.",
@@ -253,12 +280,13 @@ const copy = {
       idePromptLocked: "Write the workspace package first to unlock IDE prompts.",
       idePromptReady: "Workspace package is ready. Copy the prompt for your IDE agent.",
       zipPathTitle: "Continue with a ZIP package",
-      zipPathHelp: "Download SKILL.md, project.md, brief.json, mockups, and how-to-use.md. Attach the mockups, then give SKILL.md and project.md to your AI agent.",
+      zipPathHelp: "Download SKILL.md, project.md, brief.json, screenshots, and how-to-use.md. Attach the screenshots, then give SKILL.md and project.md to your AI agent.",
       copyAgentPrompt: "Copy agent prompt",
+      prepareFreshGeneration: "Prepare fresh generation task",
       writeWorkspace: "Write workspace package",
-      cleanWorkspace: "Clean working folder",
+      cleanWorkspace: "Clean workspace",
       workspaceReady: "Workspace package is ready at .shotbrief/working.",
-      workspaceCleaned: "ShotBrief working files were cleaned.",
+      workspaceCleaned: "ShotBrief working files and generated scratch files were cleaned.",
       workspaceFailed: "Workspace action failed.",
       generateStarter: "Review agent outputs",
       uploadTitle: "Drop screenshots or choose files",
@@ -274,13 +302,13 @@ const copy = {
       rendererTitle: "Agent output review",
       exportTitle: "Final export preview",
       liveTitle: "Live production preview",
-      subtitle: "Mockups feed the project brief; your IDE agent writes final PNGs back to the working folder.",
+      subtitle: "Raw screenshots feed the project brief; your IDE agent writes final PNGs back to the working folder.",
       exportSubtitle: "Review every generated PNG once, then export the production ZIP from the right panel.",
-      uploadEmptyTitle: "Upload screenshots to compose mockups",
+      uploadEmptyTitle: "Upload raw screenshots",
       uploadEmptyCopy:
-        "The preview will create iOS and Android mock images used in the exported AI brief package.",
+        "The exported AI brief package keeps these original screenshots and asks the agent to create the device frames.",
       basicsEmptyTitle: "Preview starts after screenshots",
-      basicsEmptyCopy: "First confirm the app basics. The next step will ask for screenshots and build device mockups here.",
+      basicsEmptyCopy: "First confirm the app basics. The next step will ask for raw screenshots for the agent package.",
       jsonEmptyTitle: "Agent outputs need attention",
       jsonEmptyCopy: "Reload after your IDE agent writes PNGs to .shotbrief/working/final."
     },
@@ -346,7 +374,7 @@ const copy = {
       badges: ["MVP planı hazır", "Hazır tema tuzağı yok", "Agent kodlu screenshot"],
       headline: "App Store ekran görüntüleri, lansman brief’i kadar net.",
       subhead:
-        "ShotBrief ham ekran görüntülerini, cihaz mockup’larını, marka bağlamını, satış açılarını ve proje talimatlarını yerel öncelikli tek akışta paketler. IDE agent tasarımı kodla özgürce üretir. ShotBrief çıkan PNG’leri kontrol ettirir.",
+        "ShotBrief ham ekran görüntülerini, marka bağlamını, satış açılarını ve proje talimatlarını yerel öncelikli tek akışta paketler. IDE agent premium cihaz frame’lerini kurup tasarımı kodla üretir. ShotBrief çıkan PNG’leri kontrol ettirir.",
       start: "Kuruluma başla",
       openRenderer: "Render alanını aç",
       stats: ["zorunlu şablon", "brief kontrolü", "hazır sinyal"],
@@ -359,17 +387,17 @@ const copy = {
       pipeline: [
         {
           title: "Bağlamı topla",
-          copy: "Uygulama bilgileri, ekran görüntüleri, ikon, platform, renkler, mood ve satış maddeleri tek sıkı brief içinde toplanır.",
+          copy: "Uygulama bilgileri, ekran görüntüleri, ikon, platform, renkler ve satış maddeleri odaklı bir brief içinde toplanır.",
           icon: Upload
         },
         {
-          title: "Mockup oluştur",
-          copy: "Ham ekran görüntüleri iOS ve Android cihaz görsellerine yerleştirilir; AI ekran uydurmak yerine bunları referans alır.",
+          title: "Ham ekranı koru",
+          copy: "Orijinal ekran görüntüleri bozulmadan pakete girer; AI üretim sırasında yüksek kaliteli cihaz frame’i içine yerleştirir.",
           icon: Smartphone
         },
         {
           title: "Agent’a devret",
-          copy: "Uygulama project.md, brief.json ve mockup’ları yazar; Codex, Cursor, Claude Code veya Antigravity tasarımı kodla üretir.",
+          copy: "Uygulama project.md, brief.json ve ham screenshot’ları yazar; Codex, Cursor, Claude Code veya Antigravity tasarımı kodla üretir.",
           icon: FileJson
         },
         {
@@ -381,17 +409,17 @@ const copy = {
       features: [
         {
           title: "Sıkı çıktı sözleşmesi",
-          copy: "Proje brief’i slide sayısını, platform ölçülerini, mockup kullanımını, renk sistemini ve export beklentilerini kilitler.",
+          copy: "Proje brief’i slide sayısını, platform ölçülerini, ham screenshot kullanımını, renk sistemini ve export beklentilerini kilitler.",
           icon: ShieldCheck
         },
         {
           title: "iOS ve Android bilinçli",
-          copy: "Mockup ID’leri, platform ölçüleri, App Store boyutları, Google Play telefon portresi ve feature graphic hedefleri açıktır.",
+          copy: "Screenshot ID’leri, platform ölçüleri, App Store boyutları, Google Play telefon portresi ve feature graphic hedefleri açıktır.",
           icon: MonitorSmartphone
         },
         {
           title: "Ücretsiz mod gerçekten işe yarar",
-          copy: "API key gerekmez. project.md, brief.json ve cihaz mockup’ları odaklı AI-ready paket olarak dışa aktarılır.",
+          copy: "API key gerekmez. project.md, brief.json ve ham screenshot’lar odaklı AI-ready paket olarak dışa aktarılır.",
           icon: KeyRound
         }
       ]
@@ -405,11 +433,11 @@ const copy = {
       descriptionPlaceholder: "Uygulamanın kullanıcıya ne kazandırdığını tek net cümleyle yaz.",
       targetPlatform: "Hedef platform",
       fillExample: "Örnek metinleri doldur",
-      brandDirection: "Marka yönü",
-      brandHelp: "brief.json ve agent handoff prompt’unda kullanılır.",
-      dominantColors: "Baskın renkler",
-      mood: "Mood / stil yönü",
-      moodPlaceholder: "Premium, sakin, hızlı, eğlenceli, geliştirici odaklı...",
+      brandDirection: "Marka ve mesajlar",
+      brandHelp: "brief.json ve agent handoff prompt’unda kullanılacak background, text ve accent renklerini seç.",
+      dominantColors: "Tema renkleri",
+      colorRoles: ["Background", "Text", "Accent"],
+      colorHelp: "1. renk slide’ın ana background rengi, 2. renk sadece yazı/text rengi, 3. renk accent olur. Muted tonlar otomatik türetilir.",
       features: "Satışa çıkarılacak özellikler",
       featurePlaceholders: [
         "Kullanıcının ilk fark etmesini istediğin ana fayda",
@@ -419,7 +447,7 @@ const copy = {
         "Opsiyonel son ayrıştırıcı özellik"
       ],
       slideCount: "Kilitli slide planı",
-      slidePlanHelp: "Slide sayısı üretilen mockup’lara kilitlenir; verilen her ekran kullanılır.",
+      slidePlanHelp: "Slide sayısı yüklenen screenshot’lara kilitlenir; verilen her ekran kullanılır.",
       slidePlanEmpty: "Kilitli slide planı için ekran görüntüsü ekle.",
       agentMode: "Nasıl devam edeceksin?",
       agentHelp: "Sonraki adım için yolu seç. IDE modu dosyaları bu repo içine yazar; ZIP modu başka bir agent’a taşınabilir paket verir.",
@@ -428,12 +456,13 @@ const copy = {
       idePromptLocked: "IDE promptlarını açmak için önce workspace paketini yaz.",
       idePromptReady: "Workspace paketi hazır. IDE agent için prompt’u kopyalayabilirsin.",
       zipPathTitle: "ZIP paketiyle devam et",
-      zipPathHelp: "SKILL.md, project.md, brief.json, mockup’lar ve how-to-use.md dosyasını indir. Mockup’ları agent’a ekle; SKILL.md ve project.md’yi agent’a ver.",
+      zipPathHelp: "SKILL.md, project.md, brief.json, screenshot’lar ve how-to-use.md dosyasını indir. Screenshot’ları agent’a ekle; SKILL.md ve project.md’yi agent’a ver.",
       copyAgentPrompt: "Agent prompt’unu kopyala",
+      prepareFreshGeneration: "Sıfırdan üretim görevini hazırla",
       writeWorkspace: "Workspace paketini yaz",
-      cleanWorkspace: "Çalışma klasörünü temizle",
+      cleanWorkspace: "Workspace’i temizle",
       workspaceReady: "Workspace paketi .shotbrief/working altında hazır.",
-      workspaceCleaned: "ShotBrief çalışma dosyaları temizlendi.",
+      workspaceCleaned: "ShotBrief çalışma dosyaları ve generated çöpleri temizlendi.",
       workspaceFailed: "Workspace işlemi başarısız oldu.",
       generateStarter: "Agent çıktılarını kontrol et",
       uploadTitle: "Ekran görüntülerini bırak veya dosya seç",
@@ -449,13 +478,13 @@ const copy = {
       rendererTitle: "Agent çıktı kontrolü",
       exportTitle: "Final export önizlemesi",
       liveTitle: "Canlı üretim önizlemesi",
-      subtitle: "Mockup’lar proje brief’ini besler; IDE agent final PNG’leri çalışma klasörüne yazar.",
+      subtitle: "Ham screenshot’lar proje brief’ini besler; IDE agent final PNG’leri çalışma klasörüne yazar.",
       exportSubtitle: "Üretilen PNG’leri son kez kontrol et, sonra sağ panelden üretim ZIP’ini dışa aktar.",
-      uploadEmptyTitle: "Mockup oluşturmak için ekran görüntüsü yükle",
+      uploadEmptyTitle: "Ham screenshot yükle",
       uploadEmptyCopy:
         "Önizleme, dışa aktarılan AI brief paketinde kullanılacak iOS ve Android mock görsellerini oluşturur.",
       basicsEmptyTitle: "Önizleme ekran görüntüsünden sonra başlar",
-      basicsEmptyCopy: "Önce temel bilgileri onayla. Sonraki adım ekran görüntülerini isteyecek ve mockup’ları burada oluşturacak.",
+      basicsEmptyCopy: "Önce temel bilgileri onayla. Sonraki adım agent paketi için ham ekran görüntülerini isteyecek.",
       jsonEmptyTitle: "Agent çıktıları bekleniyor",
       jsonEmptyCopy: "IDE agent PNG’leri .shotbrief/working/final içine yazınca yenile."
     },
@@ -551,6 +580,10 @@ function safeFileName(value: string) {
     .slice(0, 48);
 }
 
+function pathBaseName(value: string) {
+  return value.split("/").pop() ?? value;
+}
+
 async function dataUrlToBlob(dataUrl: string) {
   const response = await fetch(dataUrl);
   return response.blob();
@@ -623,14 +656,13 @@ const demoBrief: BriefState = {
     "A local-first tool for generating AI-ready app store screenshot briefs and final screenshot layouts.",
   targetPlatform: "both",
   features: [
-    "Turns raw app screenshots into polished device mockups",
+    "Keeps raw app screenshots intact for premium generated device frames",
     "Generates AI-ready screenshot briefs",
     "Supports iOS and Android output",
     "Works without an API key",
     "Hands a clean package to Codex, Cursor, Claude Code, or Antigravity"
   ],
-  colors: ["#000000", "#FFFFFF", "#737373"],
-  mood: "Premium, sharp, monochrome, launch-ready, confident"
+  colors: ["#000000", "#FFFFFF", "#737373"]
 };
 
 export function ShotBriefApp() {
@@ -649,6 +681,16 @@ export function ShotBriefApp() {
   const [copied, setCopied] = React.useState<string | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = React.useState<string | null>(null);
   const [workspacePackageReady, setWorkspacePackageReady] = React.useState(false);
+  const [embeddedExportActive, setEmbeddedExportActive] = React.useState(false);
+  const [embeddedExportKey, setEmbeddedExportKey] = React.useState(0);
+  const [embeddedExportStatus, setEmbeddedExportStatus] = React.useState<EmbeddedExportStatus>("idle");
+  const [embeddedExportMessage, setEmbeddedExportMessage] = React.useState<string | null>(null);
+  const [generationStatus, setGenerationStatus] = React.useState<GenerationStatus>({
+    hasGenerationRequest: false,
+    hasGeneratedRoute: false,
+    finalPngCount: 0
+  });
+  const [confirmation, setConfirmation] = React.useState<ConfirmationRequest | null>(null);
   const t = getCopy(locale);
 
   const mockupRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
@@ -733,11 +775,24 @@ export function ShotBriefApp() {
   React.useEffect(() => {
     if (activeTab === "renderer" || activeTab === "export") {
       void loadAgentOutputs();
+      void loadGenerationStatus();
     }
   }, [activeTab]);
 
+  React.useEffect(() => {
+    if (activeTab !== "renderer" || generationStatus.hasGeneratedRoute) return;
+    const timer = window.setInterval(() => {
+      void loadGenerationStatus();
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [activeTab, generationStatus.hasGeneratedRoute]);
+
   function invalidateFrom(step: WorkflowStep) {
     setWorkspacePackageReady(false);
+    setGenerationStatus({ hasGenerationRequest: false, hasGeneratedRoute: false, finalPngCount: 0 });
+    setEmbeddedExportActive(false);
+    setEmbeddedExportStatus("idle");
+    setEmbeddedExportMessage(null);
     const startIndex = workflowOrder.indexOf(step);
     if (startIndex <= workflowOrder.indexOf("layout")) {
       setLayoutText(defaultLayoutText);
@@ -770,6 +825,102 @@ export function ShotBriefApp() {
     export: completedSteps.review
   };
 
+  function requestConfirmation(request: ConfirmationRequest) {
+    setConfirmation(request);
+  }
+
+  async function confirmPendingAction() {
+    const request = confirmation;
+    if (!request) return;
+    setConfirmation(null);
+    await request.onConfirm();
+  }
+
+  function defaultCancelLabel() {
+    return locale === "tr" ? "Vazgeç" : "Cancel";
+  }
+
+  function confirmStartFreshBuild() {
+    requestConfirmation({
+      title: locale === "tr" ? "Yeni kurulum başlatılsın mı?" : "Start a fresh build?",
+      description:
+        locale === "tr"
+          ? "Mevcut kurulum, çalışma paketi, generated dosyalar ve final çıktılar temizlenir. Bu işlem yeni bir ShotBrief akışı başlatır."
+          : "This clears the current setup, workspace package, generated files, and final outputs before starting a new ShotBrief flow.",
+      confirmLabel: locale === "tr" ? "Yeni kurulumu başlat" : "Start fresh build",
+      cancelLabel: defaultCancelLabel(),
+      destructive: true,
+      onConfirm: startFreshBuild
+    });
+  }
+
+  function confirmWriteWorkspacePackage() {
+    requestConfirmation({
+      title: locale === "tr" ? "Workspace paketi yazılsın mı?" : "Write the workspace package?",
+      description:
+        locale === "tr"
+          ? "Güncel brief, screenshot ve asset dosyaları .shotbrief/working içine yazılır. IDE prompt seçenekleri işlem bitince açılır."
+          : "The current brief, screenshots, and assets will be written to .shotbrief/working. IDE prompt options unlock after it finishes.",
+      confirmLabel: locale === "tr" ? "Paketi yaz" : "Write package",
+      cancelLabel: defaultCancelLabel(),
+      onConfirm: writeWorkspacePackage
+    });
+  }
+
+  function confirmPrepareFreshGenerationTask() {
+    requestConfirmation({
+      title: locale === "tr" ? "Sıfırdan üretim görevi hazırlansın mı?" : "Prepare a fresh generation task?",
+      description:
+        locale === "tr"
+          ? ".shotbrief/generated, app/shotbrief-generated ve eski final çıktılar temizlenir; güncel paket Codex üretimi için hazırlanır."
+          : ".shotbrief/generated, app/shotbrief-generated, and old final outputs will be cleared; the current package will be prepared for Codex generation.",
+      confirmLabel: locale === "tr" ? "Görevi hazırla" : "Prepare task",
+      cancelLabel: defaultCancelLabel(),
+      destructive: true,
+      onConfirm: prepareFreshGenerationTask
+    });
+  }
+
+  function confirmCleanWorkspacePackage() {
+    requestConfirmation({
+      title: locale === "tr" ? "Workspace temizlensin mi?" : "Clean the workspace?",
+      description:
+        locale === "tr"
+          ? ".shotbrief/working, .shotbrief/generated ve geçici app/shotbrief-generated dosyaları silinir."
+          : ".shotbrief/working, .shotbrief/generated, and temporary app/shotbrief-generated files will be removed.",
+      confirmLabel: locale === "tr" ? "Temizle" : "Clean workspace",
+      cancelLabel: defaultCancelLabel(),
+      destructive: true,
+      onConfirm: cleanWorkspacePackage
+    });
+  }
+
+  function confirmStartEmbeddedExport() {
+    requestConfirmation({
+      title: locale === "tr" ? "Gizli export başlatılsın mı?" : "Start hidden export?",
+      description:
+        locale === "tr"
+          ? "Generated route arka planda çalışır, bu ekrandan ayrılmadan PNG çıktıları .shotbrief/working/final içine yazar."
+          : "The generated route will run in the background and write PNG outputs to .shotbrief/working/final while you stay on this screen.",
+      confirmLabel: locale === "tr" ? "Export'u başlat" : "Start export",
+      cancelLabel: defaultCancelLabel(),
+      onConfirm: startEmbeddedExport
+    });
+  }
+
+  function confirmApproveRenderedSlides() {
+    requestConfirmation({
+      title: locale === "tr" ? "Slide'lar onaylansın mı?" : "Approve rendered slides?",
+      description:
+        locale === "tr"
+          ? "Görünen PNG seti onaylanır ve 6. adım olan export ekranına taşınır."
+          : "The visible PNG set will be approved and moved to step 6, the export screen.",
+      confirmLabel: locale === "tr" ? "Slide'ları onayla" : "Approve slides",
+      cancelLabel: defaultCancelLabel(),
+      onConfirm: approveRenderedSlides
+    });
+  }
+
   function requestTab(tab: AppTab) {
     if (tabAccess[tab]) {
       setActiveTab(tab);
@@ -798,6 +949,10 @@ export function ShotBriefApp() {
     setAgentOutputs([]);
     setSelectedOutput(0);
     setWorkspacePackageReady(false);
+    setGenerationStatus({ hasGenerationRequest: false, hasGeneratedRoute: false, finalPngCount: 0 });
+    setEmbeddedExportActive(false);
+    setEmbeddedExportStatus("idle");
+    setEmbeddedExportMessage(null);
     setCompletedSteps(initialCompletedSteps);
     setBuilderSection("basics");
     setActiveTab("builder");
@@ -807,8 +962,6 @@ export function ShotBriefApp() {
     setBrief((current) => ({ ...current, [key]: value }));
     if (key === "appName" || key === "description" || key === "targetPlatform") {
       invalidateFrom("basics");
-    } else if (key === "mood") {
-      invalidateFrom("brand");
     } else {
       invalidateFrom("layout");
     }
@@ -875,6 +1028,32 @@ export function ShotBriefApp() {
     setActiveTab("export");
   }
 
+  async function loadGenerationStatus() {
+    try {
+      const response = await fetch("/api/shotbrief/generation-status", { cache: "no-store" });
+      if (!response.ok) throw new Error("Generation status failed");
+      const data = (await response.json()) as Partial<GenerationStatus>;
+      setGenerationStatus({
+        hasGenerationRequest: Boolean(data.hasGenerationRequest),
+        hasGeneratedRoute: Boolean(data.hasGeneratedRoute),
+        finalPngCount: Number(data.finalPngCount ?? 0)
+      });
+    } catch {
+      setGenerationStatus((current) => ({ ...current, hasGeneratedRoute: false }));
+    }
+  }
+
+  function startEmbeddedExport() {
+    setEmbeddedExportActive(true);
+    setEmbeddedExportStatus("waiting");
+    setEmbeddedExportKey((current) => current + 1);
+    setEmbeddedExportMessage(
+      locale === "tr"
+        ? "Generated route bulundu. Gizli runner export'u başlatıyor; bu ekranda kalabilirsin."
+        : "Generated route found. The hidden runner is starting export; you can stay on this screen."
+    );
+  }
+
   async function loadAgentOutputs() {
     setBusy(locale === "tr" ? "Agent çıktıları kontrol ediliyor" : "Checking agent outputs");
     try {
@@ -883,6 +1062,7 @@ export function ShotBriefApp() {
       const data = (await response.json()) as { files?: AgentOutput[] };
       const files = data.files ?? [];
       setAgentOutputs(files);
+      void loadGenerationStatus();
       setSelectedOutput(0);
       setCompletedSteps((current) => ({
         ...current,
@@ -959,22 +1139,21 @@ export function ShotBriefApp() {
         root.file("how-to-use.md", createPackageHowToMarkdown(brief, screenshots));
       }
 
-      const mockupsFolder = kind === "brief" ? root.folder("mockups") : null;
+      const screenshotsFolder = kind === "brief" ? root.folder("screenshots") : null;
+      const assetsFolder = kind === "brief" ? root.folder("assets") : null;
       const finalFolder = kind === "final" ? root.folder("final") : null;
 
-      if (kind === "brief" && mockupsFolder) {
-        for (const platform of platforms) {
-          for (const [index] of screenshots.entries()) {
-            const id = `mock-${platform}-${String(index + 1).padStart(2, "0")}`;
-            const node = mockupRefs.current[id];
-            if (node) {
-              const blob = await htmlToImage.toBlob(node, {
-                pixelRatio: 2,
-                backgroundColor: "transparent"
-              });
-              if (blob) mockupsFolder.file(`${id}.png`, blob);
-            }
-          }
+      if (kind === "brief" && assetsFolder) {
+        const response = await fetch(deviceFrameAssets.iphone.publicPath);
+        if (response.ok) {
+          assetsFolder.file(pathBaseName(deviceFrameAssets.iphone.packagePath), await response.blob());
+        }
+      }
+
+      if (kind === "brief" && screenshotsFolder) {
+        for (const [index, asset] of screenshots.entries()) {
+          const blob = await dataUrlToBlob(asset.dataUrl);
+          screenshotsFolder.file(pathBaseName(screenshotFileName(asset, index)), blob);
         }
       }
 
@@ -1014,35 +1193,38 @@ export function ShotBriefApp() {
     }
   }
 
+  async function buildWorkspacePackageFiles() {
+    const files: Array<{ path: string; content: string; encoding?: "utf8" | "base64" }> = [
+      { path: "brief.json", content: JSON.stringify(briefJson, null, 2) },
+      { path: "project.md", content: promptMarkdown }
+    ];
+
+    const frameResponse = await fetch(deviceFrameAssets.iphone.publicPath);
+    if (frameResponse.ok) {
+      files.push({
+        path: deviceFrameAssets.iphone.packagePath,
+        content: await blobToBase64(await frameResponse.blob()),
+        encoding: "base64"
+      });
+    }
+
+    for (const [index, asset] of screenshots.entries()) {
+      const blob = await dataUrlToBlob(asset.dataUrl);
+      files.push({
+        path: screenshotFileName(asset, index),
+        content: await blobToBase64(blob),
+        encoding: "base64"
+      });
+    }
+
+    return files;
+  }
+
   async function writeWorkspacePackage() {
     setBusy(t.output.packagingBrief);
     setWorkspaceMessage(null);
     try {
-      const htmlToImage = await import("html-to-image");
-      const files: Array<{ path: string; content: string; encoding?: "utf8" | "base64" }> = [
-        { path: "brief.json", content: JSON.stringify(briefJson, null, 2) },
-        { path: "project.md", content: promptMarkdown }
-      ];
-
-      for (const platform of platforms) {
-        for (const [index] of screenshots.entries()) {
-          const id = `mock-${platform}-${String(index + 1).padStart(2, "0")}`;
-          const node = mockupRefs.current[id];
-          if (node) {
-            const blob = await htmlToImage.toBlob(node, {
-              pixelRatio: 2,
-              backgroundColor: "transparent"
-            });
-            if (blob) {
-              files.push({
-                path: `mockups/${id}.png`,
-                content: await blobToBase64(blob),
-                encoding: "base64"
-              });
-            }
-          }
-        }
-      }
+      const files = await buildWorkspacePackageFiles();
 
       const response = await fetch("/api/shotbrief/package", {
         method: "POST",
@@ -1052,6 +1234,7 @@ export function ShotBriefApp() {
       if (!response.ok) throw new Error("Workspace write failed");
       setWorkspaceMessage(t.builder.workspaceReady);
       setWorkspacePackageReady(true);
+      await loadGenerationStatus();
       setAgentOutputs([]);
       setSelectedOutput(0);
     } catch {
@@ -1062,12 +1245,49 @@ export function ShotBriefApp() {
     }
   }
 
+  async function prepareFreshGenerationTask() {
+    setBusy(locale === "tr" ? "Sıfırdan üretim görevi hazırlanıyor" : "Preparing fresh generation task");
+    setWorkspaceMessage(null);
+    setEmbeddedExportActive(false);
+    setEmbeddedExportStatus("idle");
+    setEmbeddedExportMessage(null);
+    try {
+      const files = await buildWorkspacePackageFiles();
+      const response = await fetch("/api/shotbrief/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files })
+      });
+      const data = (await response.json()) as { ok?: boolean; request?: string; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Generation preparation failed");
+      }
+
+      await loadGenerationStatus();
+      setAgentOutputs([]);
+      setSelectedOutput(0);
+      setCompletedSteps((current) => ({
+        ...current,
+        layout: true,
+        review: false,
+        export: false
+      }));
+      setWorkspaceMessage(
+        locale === "tr"
+          ? `Üretim görevi hazır: ${data.request ?? ".shotbrief/generated/GENERATION_REQUEST.md"}. Prompt'u Codex'e ver. Codex sayfaları oluşturunca Renderer'da "Codex ile üret / export" açılacak.`
+          : `Generation task ready: ${data.request ?? ".shotbrief/generated/GENERATION_REQUEST.md"}. Give the prompt to Codex. When Codex creates the pages, "Generate / Export with Codex" will unlock in Renderer.`
+      );
+      setActiveTab("renderer");
+    } catch (error) {
+      setWorkspaceMessage(error instanceof Error ? error.message : t.builder.workspaceFailed);
+      setEmbeddedExportStatus("error");
+      setEmbeddedExportMessage(error instanceof Error ? error.message : t.builder.workspaceFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function cleanWorkspacePackage() {
-    const message =
-      locale === "tr"
-        ? "Sadece .shotbrief/working içindeki ShotBrief geçici paketi ve agent çıktıları silinecek. Devam edilsin mi?"
-        : "Only the ShotBrief temporary package and agent outputs inside .shotbrief/working will be removed. Continue?";
-    if (!window.confirm(message)) return;
     setBusy(t.builder.cleanWorkspace);
     try {
       const response = await fetch("/api/shotbrief/clean", { method: "POST" });
@@ -1076,6 +1296,10 @@ export function ShotBriefApp() {
       setSelectedOutput(0);
       setWorkspaceMessage(t.builder.workspaceCleaned);
       setWorkspacePackageReady(false);
+      setGenerationStatus({ hasGenerationRequest: false, hasGeneratedRoute: false, finalPngCount: 0 });
+      setEmbeddedExportActive(false);
+      setEmbeddedExportStatus("idle");
+      setEmbeddedExportMessage(null);
     } catch {
       setWorkspaceMessage(t.builder.workspaceFailed);
     } finally {
@@ -1118,7 +1342,7 @@ export function ShotBriefApp() {
       <TopBar
         activeTab={activeTab}
         setActiveTab={requestTab}
-        onBuild={() => void startFreshBuild()}
+        onBuild={confirmStartFreshBuild}
         locale={locale}
         setLocale={setLocale}
         tabAccess={tabAccess}
@@ -1128,7 +1352,7 @@ export function ShotBriefApp() {
         <HomePage
           locale={locale}
           completion={completion}
-          onStart={() => void startFreshBuild()}
+          onStart={confirmStartFreshBuild}
           onRenderer={() => requestTab("renderer")}
         />
       ) : (
@@ -1196,8 +1420,9 @@ export function ShotBriefApp() {
                 loadDemoBrief={loadDemoBrief}
                 copyAgentPrompt={copyAgentPrompt}
                 exportBrief={() => exportZip("brief")}
-                writeWorkspacePackage={writeWorkspacePackage}
-                cleanWorkspacePackage={cleanWorkspacePackage}
+                writeWorkspacePackage={confirmWriteWorkspacePackage}
+                prepareFreshGenerationTask={confirmPrepareFreshGenerationTask}
+                cleanWorkspacePackage={confirmCleanWorkspacePackage}
                 copied={copied}
                 busy={busy}
                 workspaceMessage={workspaceMessage}
@@ -1222,22 +1447,83 @@ export function ShotBriefApp() {
                 exportBrief={() => exportZip("brief")}
                 exportFinal={() => exportZip("final")}
                 exportCurrentSlide={exportCurrentSlide}
-                cleanWorkspacePackage={cleanWorkspacePackage}
+                cleanWorkspacePackage={confirmCleanWorkspacePackage}
                 downloadText={downloadText}
                 locale={locale}
                 screenshotsCount={screenshots.length}
                 slidesCount={layoutPlan?.slides.length ?? 0}
                 agentOutputsCount={agentOutputs.length}
                 completedSteps={completedSteps}
-                approveRenderedSlides={approveRenderedSlides}
+                approveRenderedSlides={confirmApproveRenderedSlides}
                 reloadAgentOutputs={loadAgentOutputs}
                 workspaceMessage={workspaceMessage}
+                prepareFreshGenerationTask={prepareFreshGenerationTask}
+                startEmbeddedExport={confirmStartEmbeddedExport}
+                generationStatus={generationStatus}
+                embeddedExportActive={embeddedExportActive}
+                embeddedExportStatus={embeddedExportStatus}
+                embeddedExportMessage={embeddedExportMessage}
               />
             )}
           </div>
+          <EmbeddedExportRunner
+            active={activeTab === "renderer" && embeddedExportActive}
+            runKey={embeddedExportKey}
+            locale={locale}
+            onStatus={(status, message) => {
+              setEmbeddedExportStatus(status);
+              setEmbeddedExportMessage(message);
+            }}
+            onComplete={() => {
+              setEmbeddedExportActive(false);
+              setEmbeddedExportStatus("done");
+              setEmbeddedExportMessage(
+                locale === "tr"
+                  ? "Gizli export tamamlandı. Galeri yenilendi."
+                  : "Hidden export finished. Gallery refreshed."
+              );
+              void loadAgentOutputs();
+            }}
+          />
         </section>
       )}
+      <ConfirmationDialog
+        request={confirmation}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => void confirmPendingAction()}
+      />
     </main>
+  );
+}
+
+function ConfirmationDialog({
+  request,
+  onCancel,
+  onConfirm
+}: {
+  request: ConfirmationRequest | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={Boolean(request)} onOpenChange={(open) => !open && onCancel()}>
+      {request && (
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{request.title}</AlertDialogTitle>
+            <AlertDialogDescription>{request.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button" onClick={onCancel}>
+              {request.cancelLabel}
+            </AlertDialogCancel>
+            <AlertDialogAction type="button" destructive={request.destructive} onClick={onConfirm}>
+              {request.confirmLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      )}
+    </AlertDialog>
   );
 }
 
@@ -1579,7 +1865,7 @@ function HeroMachine({ locale }: { locale: Locale }) {
         <div className="space-y-2 font-mono text-xs">
           {[
             "# project.md",
-            "Use mockups/*.png only",
+            "Use screenshots/* only",
             "Design in code",
             "Export PNGs to /final"
           ].map((line) => (
@@ -1672,8 +1958,8 @@ function BuilderPanel({
           brand: "Marka",
           ai: "AI ve çıktı",
           basicsHelp: "Uygulamanı mağaza görseli için tanıt.",
-          assetsHelp: "Mockup ve brief paketine girecek dosyaları yükle.",
-          brandHelp: "AI’nin kullanacağı görsel yönü belirle.",
+          assetsHelp: "Brief paketine girecek ham screenshot dosyalarını yükle.",
+          brandHelp: "Renkleri ve slide mesajlarını netleştir.",
           aiHelp: "Agent paketini hazırla ve PNG çıktı kontrolüne geç."
         }
       : {
@@ -1682,8 +1968,8 @@ function BuilderPanel({
           brand: "Brand",
           ai: "AI and output",
           basicsHelp: "Describe the app for the store screenshot brief.",
-          assetsHelp: "Upload the files that feed mockups and the brief package.",
-          brandHelp: "Set the visual direction the AI should follow.",
+          assetsHelp: "Upload the raw screenshots that feed the brief package.",
+          brandHelp: "Define the colors and slide messages.",
           aiHelp: "Prepare the agent package and move to PNG output review."
         };
   const sections = [
@@ -1808,6 +2094,7 @@ function BuilderDetailsPanel({
   copyAgentPrompt,
   exportBrief,
   writeWorkspacePackage,
+  prepareFreshGenerationTask,
   cleanWorkspacePackage,
   copied,
   busy,
@@ -1831,8 +2118,9 @@ function BuilderDetailsPanel({
   loadDemoBrief: () => void;
   copyAgentPrompt: (agent: AgentTarget) => Promise<void>;
   exportBrief: () => Promise<void>;
-  writeWorkspacePackage: () => Promise<void>;
-  cleanWorkspacePackage: () => Promise<void>;
+  writeWorkspacePackage: () => void | Promise<void>;
+  prepareFreshGenerationTask: () => void | Promise<void>;
+  cleanWorkspacePackage: () => void | Promise<void>;
   copied: string | null;
   busy: string | null;
   workspaceMessage: string | null;
@@ -1848,14 +2136,14 @@ function BuilderDetailsPanel({
     locale === "tr"
       ? {
           basics: ["Temel bilgiler", "Kullanıcının ve AI’nin uygulamayı anlaması için gereken minimum bilgiler."],
-          assets: ["Görseller", "Ham ekran görüntüleri burada mockup’a dönüşür. İstersen demo ile akışı dene."],
-          brand: ["Marka yönü", "Renk, mood ve satış maddeleri final ekranların tonunu belirler."],
+          assets: ["Görseller", "Ham ekran görüntüleri bozulmadan agent paketine girer. İstersen demo ile akışı dene."],
+          brand: ["Marka ve mesajlar", "Renkler ve satış maddeleri final ekranların ürün hikayesini belirler."],
           ai: ["AI ve çıktı", "Kilitli slide planını kontrol et, agent paketini hazırla ve PNG çıktı kontrolüne geç."]
         }
       : {
           basics: ["Basics", "The minimum information needed for users and AI to understand the app."],
-          assets: ["Assets", "Raw screenshots become device mockups here. Use demo assets to test the flow."],
-          brand: ["Brand direction", "Colors, mood, and selling points shape the final screenshots."],
+          assets: ["Assets", "Raw screenshots stay intact in the agent package. Use demo assets to test the flow."],
+          brand: ["Brand and messages", "Colors and selling points shape the product story in the final screenshots."],
           ai: ["AI and output", "Review the locked slide plan, prepare the agent package, then move to PNG review."]
         };
   const order: SetupSection[] = ["basics", "assets", "brand", "ai"];
@@ -1872,9 +2160,8 @@ function BuilderDetailsPanel({
     basics: Boolean(brief.appName.trim() && brief.description.trim()),
     assets: screenshots.length > 0,
     brand:
-      brief.colors.filter(Boolean).length >= 2 &&
-      brief.features.filter(Boolean).length >= 3 &&
-      Boolean(brief.mood.trim()),
+      brief.colors.filter(Boolean).length >= 3 &&
+      brief.features.filter(Boolean).length >= 3,
     ai: screenshots.length > 0 && completedSteps.brand
   };
   const slideTargets = createSlideTargets(brief, screenshots);
@@ -1884,13 +2171,13 @@ function BuilderDetailsPanel({
       ? {
           basics: "Temel bilgileri onayla",
           assets: "Bu görselleri kullan",
-          brand: "Marka yönünü onayla",
+          brand: "Marka ve mesajları onayla",
           ai: "PNG çıktılarını kontrol et"
         }
       : {
           basics: "Confirm basics",
           assets: "Use these assets",
-          brand: "Confirm brand direction",
+          brand: "Confirm brand and messages",
           ai: "Review PNG outputs"
         };
   const continueLabel =
@@ -1904,7 +2191,7 @@ function BuilderDetailsPanel({
       ? {
           basics: "Devam etmek için uygulama adı ve kısa açıklama gerekli.",
           assets: "Devam etmek için en az bir ekran görüntüsü ekle veya demo asset yükle.",
-          brand: "Devam etmek için en az iki renk, üç satış maddesi ve mood gerekli.",
+          brand: "Devam etmek için background, text, accent renkleri ve üç satış maddesi gerekli.",
           ai: completedSteps.brand
             ? "PNG çıktı kontrolüne geçmek için en az bir ekran görüntüsü gerekli."
             : "Önce marka adımını onayla, sonra PNG çıktı kontrolüne geç."
@@ -1912,7 +2199,7 @@ function BuilderDetailsPanel({
       : {
           basics: "App name and short description are required to continue.",
           assets: "Add at least one screenshot or load demo assets to continue.",
-          brand: "At least two colors, three selling points, and a mood are required.",
+          brand: "Background, text, accent colors, and three selling points are required.",
           ai: completedSteps.brand
             ? "At least one screenshot is required before PNG review."
             : "Confirm the brand step before opening PNG review."
@@ -2008,9 +2295,15 @@ function BuilderDetailsPanel({
           {builderSection === "brand" && (
             <>
               <Field label={t.builder.dominantColors}>
+                <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                  {t.builder.colorHelp}
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   {brief.colors.map((color, index) => (
                     <div key={index} className="space-y-2">
+                      <Label className="text-xs font-semibold">
+                        {t.builder.colorRoles[index] ?? `Color ${index + 1}`}
+                      </Label>
                       <Input
                         type="color"
                         value={color}
@@ -2025,13 +2318,6 @@ function BuilderDetailsPanel({
                     </div>
                   ))}
                 </div>
-              </Field>
-              <Field label={t.builder.mood}>
-                <Textarea
-                  value={brief.mood}
-                  placeholder={t.builder.moodPlaceholder}
-                  onChange={(event) => updateBrief("mood", event.target.value)}
-                />
               </Field>
               <Field label={t.builder.features}>
                 <div className="space-y-2">
@@ -2050,38 +2336,6 @@ function BuilderDetailsPanel({
 
           {builderSection === "ai" && (
             <>
-              <Field label={t.builder.slideCount}>
-                <div className="rounded-lg border bg-muted/25 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-2xl font-semibold">{requiredSlideCount}</div>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {screenshots.length > 0 ? t.builder.slidePlanHelp : t.builder.slidePlanEmpty}
-                      </p>
-                    </div>
-                    <Badge className="bg-background">
-                      {screenshots.length} x {getPlatforms(brief.targetPlatform).length}
-                    </Badge>
-                  </div>
-                  {slideTargets.length > 0 && (
-                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto">
-                      {slideTargets.map((target) => (
-                        <div
-                          key={`${target.platform}-${target.mockup}`}
-                          className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-xs"
-                        >
-                          <span className="font-medium">
-                            {String(target.slideNumber).padStart(2, "0")} / {target.mockup}
-                          </span>
-                          <span className="text-muted-foreground">
-                            {target.outputSize.width}x{target.outputSize.height}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </Field>
               <Field label={t.builder.agentMode}>
                 <div className="space-y-3">
                   <p className="text-sm leading-6 text-muted-foreground">{t.builder.agentHelp}</p>
@@ -2101,6 +2355,7 @@ function BuilderDetailsPanel({
                     </div>
 
                     <Button
+                      data-testid="shotbrief-write-workspace"
                       className="mt-3 w-full justify-between"
                       variant={workspacePackageReady ? "outline" : "default"}
                       onClick={() => void writeWorkspacePackage()}
@@ -2109,28 +2364,49 @@ function BuilderDetailsPanel({
                       {t.builder.writeWorkspace} <Code2 />
                     </Button>
 
-                    <div className="mt-3 rounded-md border bg-background p-3">
-                      <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                        {workspacePackageReady ? t.builder.idePromptReady : t.builder.idePromptLocked}
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["Codex", "Cursor", "Claude Code", "Antigravity"] as AgentTarget[]).map(
-                          (agent) => (
-                            <Button
-                              key={agent}
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="justify-between"
-                              onClick={() => void copyAgentPrompt(agent)}
-                              disabled={Boolean(busy) || !workspacePackageReady}
-                            >
-                              {agent} {copied === `agent-${agent}` ? <Check /> : <Copy />}
-                            </Button>
-                          )
-                        )}
+                    <Button
+                      data-testid="shotbrief-prepare-generation"
+                      className="mt-2 w-full justify-between"
+                      variant="default"
+                      onClick={() => void prepareFreshGenerationTask()}
+                      disabled={Boolean(busy) || !validSection.ai}
+                    >
+                      {t.builder.prepareFreshGeneration} <Sparkles />
+                    </Button>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {locale === "tr"
+                        ? "Her çalıştırmada .shotbrief/generated, app/shotbrief-generated ve eski final çıktılar temizlenir; mevcut SKILL/project/brief/screenshots Codex üretimi için hazır edilir."
+                        : "Each run clears .shotbrief/generated, app/shotbrief-generated, and old final outputs, then prepares the current SKILL/project/brief/screenshots for Codex generation."}
+                    </p>
+
+                    {workspacePackageReady ? (
+                      <div className="mt-3 rounded-md border bg-background p-3">
+                        <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                          {t.builder.idePromptReady}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(["Codex", "Cursor", "Claude Code", "Antigravity"] as AgentTarget[]).map(
+                            (agent) => (
+                              <Button
+                                key={agent}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="justify-between"
+                                onClick={() => void copyAgentPrompt(agent)}
+                                disabled={Boolean(busy)}
+                              >
+                                {agent} {copied === `agent-${agent}` ? <Check /> : <Copy />}
+                              </Button>
+                            )
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="mt-3 rounded-md border bg-background p-3 text-xs leading-5 text-muted-foreground">
+                        {t.builder.idePromptLocked}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-lg border bg-muted/25 p-3">
@@ -2314,49 +2590,27 @@ function PreviewPanel({
 
   return (
     <section className="min-w-0 space-y-5">
-      <div className="rounded-lg border bg-card p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">
-              {activeTab === "renderer"
-                ? t.preview.rendererTitle
-                : activeTab === "export"
-                  ? t.preview.exportTitle
-                  : t.preview.liveTitle}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {activeTab === "export" ? t.preview.exportSubtitle : t.preview.subtitle}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {activeTab === "builder" && platforms.length > 1 ? (
-              <div className="flex rounded-lg border bg-background p-1">
-                {platforms.map((platform) => (
-                  <button
-                    key={platform}
-                    type="button"
-                    onClick={() => setActiveMockupPlatform(platform)}
-                    className={cn(
-                      "h-8 rounded-md px-3 text-xs font-semibold uppercase transition",
-                      activeMockupPlatform === platform
-                        ? "bg-foreground text-background"
-                        : "text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {platform}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              platforms.map((platform) => (
-                <Badge key={platform} className="bg-background">
-                  {platform}
-                </Badge>
-              ))
-            )}
+      {activeTab === "builder" && platforms.length > 1 && (
+        <div className="flex justify-end">
+          <div className="flex rounded-lg border bg-background p-1">
+            {platforms.map((platform) => (
+              <button
+                key={platform}
+                type="button"
+                onClick={() => setActiveMockupPlatform(platform)}
+                className={cn(
+                  "h-8 rounded-md px-3 text-xs font-semibold uppercase transition",
+                  activeMockupPlatform === platform
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                {platform}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
       {activeTab === "renderer" || activeTab === "export" ? (
         <AgentOutputReview
@@ -2633,52 +2887,40 @@ function AgentOutputReview({
   if (!outputs.length) {
     return (
       <div className="space-y-4">
-        <Card className="border-dashed">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle>
-                  {locale === "tr" ? "Agent çıktıları bekleniyor" : "Waiting for agent outputs"}
-                </CardTitle>
-                <CardDescription>
-                  {locale === "tr"
-                    ? "IDE agent işi bitirince PNG dosyalarını .shotbrief/working/final içine koymalı. Bu ekranda kalıp Reload ile tekrar kontrol edebilirsin."
-                    : "When the IDE agent finishes, it should place PNG files in .shotbrief/working/final. Stay here and use Reload to check again."}
-                </CardDescription>
-              </div>
+        <div className="grid min-h-[640px] place-items-center rounded-lg border border-dashed bg-muted/20 p-8 text-center">
+          <div>
+            <div className="mx-auto flex size-14 items-center justify-center rounded-md border bg-background">
+              <MonitorSmartphone className="size-7" />
+            </div>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <h3 className="text-lg font-semibold">
+                {locale === "tr" ? "Henüz PNG bulunamadı" : "No PNGs found yet"}
+              </h3>
               <Badge className="bg-background">
                 0 / {expectedCount || "-"}
               </Badge>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid min-h-[520px] place-items-center rounded-lg border bg-muted/35 p-8 text-center">
-              <div>
-                <div className="mx-auto flex size-14 items-center justify-center rounded-md border bg-background">
-                  <MonitorSmartphone className="size-7" />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold">
-                  {locale === "tr" ? "Henüz PNG bulunamadı" : "No PNGs found yet"}
-                </h3>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                  {locale === "tr"
-                    ? "Beklenen klasörler: .shotbrief/working/final, outputs veya exports. Agent tasarımı bitirip dosyaları yazınca burası galeriye dönüşür."
-                    : "Expected folders: .shotbrief/working/final, outputs, or exports. Once the agent writes files there, this placeholder becomes a gallery."}
-                </p>
-                <Button className="mt-5 justify-between" onClick={() => void reloadAgentOutputs()}>
-                  {locale === "tr" ? "Çıktıları yenile" : "Reload outputs"} <RefreshCcw />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              {locale === "tr"
+                ? "Agent final PNG dosyalarını .shotbrief/working/final içine yazınca bu alan doğrudan render galerisini gösterir."
+                : "Once the agent writes final PNG files to .shotbrief/working/final, this area shows the rendered gallery directly."}
+            </p>
+            <Button
+              data-testid="shotbrief-reload-outputs"
+              className="mt-5 justify-between"
+              onClick={() => void reloadAgentOutputs()}
+            >
+              {locale === "tr" ? "Çıktıları yenile" : "Reload outputs"} <RefreshCcw />
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
+    <div className="space-y-4" data-testid="shotbrief-agent-output-gallery">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">
             {locale === "tr" ? "Agent çıktı galerisi" : "Agent output gallery"}
@@ -2687,25 +2929,29 @@ function AgentOutputReview({
             {outputs.length} / {expectedCount || outputs.length} PNG
           </div>
         </div>
-        <Button variant="outline" onClick={() => void reloadAgentOutputs()}>
+        <Button data-testid="shotbrief-reload-outputs" variant="outline" onClick={() => void reloadAgentOutputs()}>
           {locale === "tr" ? "Yenile" : "Reload"} <RefreshCcw />
         </Button>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
-        <div className="flex min-h-[700px] items-center justify-center rounded-lg border bg-muted/35 p-4">
+        <div className="flex min-h-[760px] items-start justify-center">
           {current && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              data-testid="shotbrief-agent-output-image"
               src={current.dataUrl}
               alt={current.name}
-              className="max-h-[760px] max-w-full rounded-lg border bg-background object-contain shadow-sharp"
+              className="max-h-[calc(100vh-160px)] max-w-full object-contain shadow-sharp"
             />
           )}
         </div>
         <div className="space-y-3">
           {outputs.map((output, index) => (
             <button
+              data-testid="shotbrief-output-file"
+              data-output-name={output.name}
+              data-output-path={output.path}
               key={output.path}
               className={cn(
                 "w-full rounded-lg border bg-card p-3 text-left transition hover:border-foreground",
@@ -2723,6 +2969,123 @@ function AgentOutputReview({
         </div>
       </div>
     </div>
+  );
+}
+
+function EmbeddedExportRunner({
+  active,
+  runKey,
+  locale,
+  onStatus,
+  onComplete
+}: {
+  active: boolean;
+  runKey: number;
+  locale: Locale;
+  onStatus: (status: EmbeddedExportStatus, message: string) => void;
+  onComplete: () => void;
+}) {
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const onStatusRef = React.useRef(onStatus);
+  const onCompleteRef = React.useRef(onComplete);
+  const [attempt, setAttempt] = React.useState(0);
+
+  React.useEffect(() => {
+    onStatusRef.current = onStatus;
+    onCompleteRef.current = onComplete;
+  }, [onComplete, onStatus]);
+
+  React.useEffect(() => {
+    if (!active) {
+      setAttempt(0);
+      return;
+    }
+    setAttempt(0);
+  }, [active, runKey]);
+
+  React.useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let retryTimer: number | undefined;
+
+    function retry(message?: string) {
+      if (cancelled) return;
+      onStatusRef.current(
+        "waiting",
+        message ??
+          (locale === "tr"
+            ? "Generated route bekleniyor. Renderer ekranından ayrılmana gerek yok."
+            : "Waiting for the generated route. You can stay on Renderer.")
+      );
+      retryTimer = window.setTimeout(() => {
+        if (!cancelled) setAttempt((current) => current + 1);
+      }, 3000);
+    }
+
+    function inspect() {
+      const frame = iframeRef.current;
+      const doc = frame?.contentDocument;
+      if (!doc) {
+        retry();
+        return;
+      }
+
+      const statusNode = doc.querySelector<HTMLElement>('[data-testid="shotbrief-export-status"]');
+      if (!statusNode) {
+        retry();
+        return;
+      }
+
+      const statusText = statusNode.textContent?.trim() ?? "";
+      if (/done/i.test(statusText)) {
+        onCompleteRef.current();
+        return;
+      }
+      if (/error|failed/i.test(statusText)) {
+        onStatusRef.current(
+          "error",
+          locale === "tr"
+            ? `Gizli export hata verdi: ${statusText}`
+            : `Hidden export reported an error: ${statusText}`
+        );
+        return;
+      }
+
+      onStatusRef.current(
+        "running",
+        statusText
+          ? locale === "tr"
+            ? `Gizli export çalışıyor: ${statusText}`
+            : `Hidden export running: ${statusText}`
+          : locale === "tr"
+            ? "Gizli export çalışıyor."
+            : "Hidden export is running."
+      );
+      pollTimer = window.setTimeout(inspect, 1000);
+    }
+
+    retryTimer = window.setTimeout(inspect, 800);
+    return () => {
+      cancelled = true;
+      if (pollTimer) window.clearTimeout(pollTimer);
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [active, attempt, locale]);
+
+  if (!active) return null;
+
+  return (
+    <iframe
+      key={`${runKey}-${attempt}`}
+      ref={iframeRef}
+      title="ShotBrief hidden export runner"
+      src={`/shotbrief-generated/current?export=1&embedded=1&attempt=${attempt}`}
+      aria-hidden="true"
+      tabIndex={-1}
+      className="pointer-events-none fixed left-0 top-0 h-[3200px] w-[1600px] border-0 opacity-0"
+      style={{ zIndex: -1 }}
+    />
   );
 }
 
@@ -2748,7 +3111,13 @@ function OutputPanel({
   completedSteps,
   approveRenderedSlides,
   reloadAgentOutputs,
-  workspaceMessage
+  workspaceMessage,
+  prepareFreshGenerationTask,
+  startEmbeddedExport,
+  generationStatus,
+  embeddedExportActive,
+  embeddedExportStatus,
+  embeddedExportMessage
 }: {
   activeTab: AppTab;
   briefJson: unknown;
@@ -2763,7 +3132,7 @@ function OutputPanel({
   exportBrief: () => Promise<void>;
   exportFinal: () => Promise<void>;
   exportCurrentSlide: () => Promise<void>;
-  cleanWorkspacePackage: () => Promise<void>;
+  cleanWorkspacePackage: () => void | Promise<void>;
   locale: Locale;
   screenshotsCount: number;
   slidesCount: number;
@@ -2772,6 +3141,12 @@ function OutputPanel({
   approveRenderedSlides: () => void;
   reloadAgentOutputs: () => Promise<void>;
   workspaceMessage: string | null;
+  prepareFreshGenerationTask: () => void | Promise<void>;
+  startEmbeddedExport: () => void;
+  generationStatus: GenerationStatus;
+  embeddedExportActive: boolean;
+  embeddedExportStatus: EmbeddedExportStatus;
+  embeddedExportMessage: string | null;
 }) {
   const t = getCopy(locale);
   const [showJson, setShowJson] = React.useState(false);
@@ -2879,6 +3254,50 @@ function OutputPanel({
         <CardContent className="space-y-3">
           {activeTab === "renderer" && (
             <Button
+              data-testid="shotbrief-generate-export-codex"
+              className="w-full justify-between"
+              onClick={startEmbeddedExport}
+              disabled={Boolean(busy) || !generationStatus.hasGeneratedRoute}
+            >
+              {locale === "tr" ? "Codex ile üret / export" : "Generate / Export with Codex"} <Sparkles />
+            </Button>
+          )}
+          {activeTab === "renderer" && !generationStatus.hasGeneratedRoute && (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+              {generationStatus.hasGenerationRequest
+                ? locale === "tr"
+                  ? "Codex prompt'u aldıktan sonra generated sayfaları oluşturmalı. Sayfalar oluşunca bu buton açılacak."
+                  : "After Codex receives the prompt, it should create the generated pages. This button unlocks when those pages exist."
+                : locale === "tr"
+                  ? "Önce 4. adımda üretim görevini hazırla ve prompt'u Codex'e ver."
+                  : "First prepare the generation task in step 4 and give the prompt to Codex."}
+            </div>
+          )}
+          {activeTab === "renderer" && embeddedExportStatus !== "idle" && (
+            <div
+              data-testid="shotbrief-embedded-export-status"
+              className={cn(
+                "rounded-md border p-3 text-xs leading-5",
+                embeddedExportStatus === "error"
+                  ? "border-destructive/35 bg-destructive/5 text-destructive"
+                  : "bg-muted/40 text-muted-foreground"
+              )}
+            >
+              <div className="font-semibold">
+                {locale === "tr"
+                  ? embeddedExportActive
+                    ? "Gizli export runner açık"
+                    : "Gizli export runner"
+                  : embeddedExportActive
+                    ? "Hidden export runner active"
+                    : "Hidden export runner"}
+              </div>
+              {embeddedExportMessage && <div className="mt-1">{embeddedExportMessage}</div>}
+            </div>
+          )}
+          {activeTab === "renderer" && (
+            <Button
+              data-testid="shotbrief-approve-rendered-slides"
               className="w-full justify-between"
               onClick={approveRenderedSlides}
               disabled={agentOutputsCount === 0}
@@ -2888,6 +3307,7 @@ function OutputPanel({
           )}
           {activeTab === "renderer" && (
             <Button
+              data-testid="shotbrief-reload-outputs"
               className="w-full justify-between"
               variant="outline"
               onClick={() => void reloadAgentOutputs()}
@@ -2896,20 +3316,6 @@ function OutputPanel({
               {locale === "tr" ? "Çıktıları yenile" : "Reload outputs"} <RefreshCcw />
             </Button>
           )}
-          <Button
-            className="w-full justify-between"
-            variant="outline"
-            onClick={() => copyText("prompt", promptMarkdown)}
-          >
-            {t.output.copyPrompt} {copied === "prompt" ? <Check /> : <Copy />}
-          </Button>
-          <Button
-            className="w-full justify-between"
-            variant="outline"
-            onClick={() => copyText("brief", briefText)}
-          >
-            {t.output.copyBrief} {copied === "brief" ? <Check /> : <Copy />}
-          </Button>
         </CardContent>
       </Card>
       )}
