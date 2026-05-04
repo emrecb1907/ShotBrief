@@ -3083,7 +3083,7 @@ function EmbeddedExportRunner({
       src={`/shotbrief-generated/current?export=1&embedded=1&attempt=${attempt}`}
       aria-hidden="true"
       tabIndex={-1}
-      className="pointer-events-none fixed left-0 top-0 h-[3200px] w-[1600px] border-0 opacity-0"
+      className="pointer-events-none fixed left-[-20000px] top-0 h-[3200px] w-[1600px] border-0 opacity-0"
       style={{ zIndex: -1 }}
     />
   );

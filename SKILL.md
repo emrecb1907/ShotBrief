@@ -130,7 +130,7 @@ The generator should contain:
 - `IPhoneFrame` and `AndroidFrame` components
 - a PNG-frame based `IPhoneFrame` using `assets/iphone-mockup.png` when available
 - `Caption` or headline lockup component
-- decorative components for glows, paths, badges, proof elements, and stage lighting
+- decorative components for glows, paths, visual proof cues, and stage lighting. These must not introduce extra readable text unless the user explicitly supplied that exact slide text.
 - one slide component or slide factory per slide
 - theme preset and layout recipe definitions selected for this package
 - preview grid scaled down with CSS
@@ -321,7 +321,7 @@ For each slide:
 3. Use `object-fit: cover` or `contain` only inside the screen slot.
 4. Keep the screenshot pixels otherwise untouched.
 
-Absolutely no overlay may sit on top of the screenshot area. Do not put marketing copy, the app name, icon chips, stars, QR blocks, arrows, badges, cards, glows, decorations, labels, or proof elements above the screenshot layer. Put these elements on the slide canvas outside the phone screen, behind the phone, or in empty background space. The phone may be large, cropped, or partially off-canvas, but the raw screenshot content must remain unobstructed.
+Absolutely no overlay may sit on top of the screenshot area. Do not put marketing copy, the app name, icon chips, stars, QR blocks, arrows, badges, cards, glows, decorations, labels, or visual proof cues above the screenshot layer. Put any permitted non-text decorative elements on the slide canvas outside the phone screen, behind the phone, or in empty background space. The phone may be large, cropped, or partially off-canvas, but the raw screenshot content must remain unobstructed.
 
 If the screenshot already has a status bar, notch, Dynamic Island, or navigation bar, do not draw another one over it. If the screenshot is a pure app capture without status hardware, a frame notch/camera is acceptable only if it does not cover important UI.
 
@@ -623,6 +623,8 @@ Write the copy before building layouts. Bad copy ruins good design.
 Rules:
 
 - One slide, one idea.
+- Limit readable slide copy to the app name, one headline, and one optional supporting subtitle. Do not add extra readable marketing text, proof pills, badges, chips, labels, eyebrow copy, CTA text, or repeated micro-copy unless the user explicitly supplied that exact text for the slide.
+- When a subtitle/supporting line is present, style it with the accent color. Keep the headline and app-name lockup in the text color.
 - Prefer 3 to 7 words for headlines.
 - Prefer 3 to 5 words per headline line.
 - Use intentional line breaks.
@@ -630,7 +632,7 @@ Rules:
 - Use one short supporting line only when it improves clarity.
 - Avoid paragraphs and technical feature dumps.
 - Write benefits in plain language.
-- Keep labels, badges, and eyebrow text optional.
+- Prefer visual/decorative support without readable words when the slide needs energy beyond the headline and subtitle.
 - Never place copy behind a phone, blob, panel, or crop boundary.
 
 Recommended slide arc:
@@ -776,6 +778,8 @@ Every slide must pass:
 - no duplicate Dynamic Island, notch, or status hardware
 - no headline overlap
 - no support copy overlap
+- no extra readable copy beyond app name, headline, and optional subtitle unless the user explicitly supplied it
+- subtitle/support copy uses the accent color when present
 - no text clipped by canvas edge
 - no important text behind the phone
 - app name is large enough to read as a brand mark on every slide
@@ -799,7 +803,7 @@ Only finish when the PNG set passes visual QA.
 
 | Mistake | Fix |
 | --- | --- |
-| All slides look the same | Vary device position, text zone, background weight, crop, and proof elements |
+| All slides look the same | Vary device position, text zone, background weight, crop, and non-text visual proof cues |
 | Phone frame looks fake | Use the measured CSS frame above or a measured PNG frame slot |
 | Dynamic Island appears twice | Set `screenshotHasHardware={true}` and hide generated hardware |
 | Copy is too complex | Use the one-second thumbnail test and rewrite |

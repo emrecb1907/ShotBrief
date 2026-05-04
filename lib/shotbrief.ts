@@ -297,6 +297,8 @@ ${sizes}
 - Every slide must use its assigned raw screenshot file.
 - Each slide must sell one idea.
 - Write the copy first, then design the layout. Bad copy ruins good design.
+- Limit readable slide copy to the app name, one headline, and one optional supporting subtitle. Do not add extra readable marketing text, proof pills, badges, chips, labels, eyebrow copy, CTA text, or repeated micro-copy unless the user explicitly supplied that exact text for the slide.
+- When a subtitle/supporting line is present, style it with the accent color. Keep the headline and app-name lockup in the text color.
 - Do not use long headlines; prefer short, high-converting copy.
 - Prefer 3-5 words per headline line with intentional line breaks.
 - Use large, readable type that works at store thumbnail size.
@@ -306,7 +308,7 @@ ${sizes}
 - Use the brand palette as the visual system, but let the art direction be creative.
 - Make the app name a strong visible brand signal on every slide. It must be larger than a tiny chip and readable at store thumbnail size.
 - Follow SKILL.md closely for production rules, but do not lock every set into a single repeated visual scenario.
-- Work at an advanced level: choose composition, depth, typography, and proof elements from the screenshot content and slide message.
+- Work at an advanced level: choose composition, depth, typography, and non-text visual proof cues from the screenshot content and slide message.
 - If no brand font is supplied, use one premium modern sans system such as Inter, SF Pro Display, Satoshi, Manrope, Plus Jakarta Sans, Avenir Next, Helvetica Neue, or system sans.
 - Keep the same primary font family across every slide. Do not use Times New Roman-style serif, typewriter, monospace marketing copy, handwriting, or novelty fonts.
 - Make the first slide sell the strongest benefit.
@@ -340,6 +342,7 @@ ${sizes}
 ## Common mistakes to avoid
 - Do not transform the raw screenshot itself except fitting/cropping inside the device screen area.
 - Do not cover the screenshot with any overlay, including text, icons, app-name chips, cards, stars, arrows, QR blocks, badges, glows, or decorative elements.
+- Do not add readable text beyond app name, headline, and optional accent-colored subtitle unless the user explicitly supplied that exact slide text.
 - Do not add extra slides.
 - Do not skip a screenshot from the slide plan.
 - Do not use random colors outside the provided palette.

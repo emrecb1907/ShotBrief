@@ -19,6 +19,18 @@ function safeOutputPath(fileName: string) {
 
 export async function POST(request: Request) {
   try {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.startsWith("image/png")) {
+      const url = new URL(request.url);
+      const fileName = request.headers.get("x-shotbrief-filename") ?? url.searchParams.get("fileName");
+      if (!fileName) throw new Error("Missing fileName");
+
+      await mkdir(finalDir, { recursive: true });
+      await writeFile(safeOutputPath(fileName), Buffer.from(await request.arrayBuffer()));
+
+      return NextResponse.json({ ok: true, fileName });
+    }
+
     const body = (await request.json()) as { fileName?: string; dataUrl?: string };
     if (!body.fileName || !body.dataUrl) {
       throw new Error("Missing fileName or dataUrl");

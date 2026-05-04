@@ -78,6 +78,8 @@ Do not use a permanent hardcoded exporter. Delete/recreate generated source for 
 - Use the raw screenshots as the only app UI visuals.
 - Use measured device frames.
 - Treat each screenshot as an advertisement slide, not a UI showcase.
+- Limit readable slide copy to app name, one headline, and one optional subtitle; do not add extra pills, badges, chips, labels, CTA text, or repeated micro-copy unless the user explicitly supplied that exact text.
+- Style subtitle/support copy with the accent color when present.
 - Choose fresh theme tokens and layout recipes from SKILL.md for this package.
 - Reject plain gradient + phone + headline results and revise before finishing.
 - Expose the generated browser route with the DOM automation targets required by SKILL.md.
