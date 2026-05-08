@@ -8,6 +8,12 @@ The agent does the creative screenshot design in code. ShotBrief then reloads th
 
 ShotBrief expects the IDE agent to have access to a local browser or Codex in-app browser DOM surface for rendering, export status checks, and visual QA. If the browser/DOM surface is closed or disabled, reopen or enable it before asking the agent to produce final screenshots.
 
+## Screenshots
+
+![ShotBrief home screen](public/shotbrief/screenshots/shotbrief-home.png)
+
+![ShotBrief builder screen](public/shotbrief/screenshots/shotbrief-builder.png)
+
 ## Why ShotBrief Exists
 
 AI-generated store screenshots often fail because the prompt is too vague. The agent usually does not know:
